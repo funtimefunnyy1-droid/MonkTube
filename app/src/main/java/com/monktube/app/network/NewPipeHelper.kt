@@ -30,7 +30,6 @@ object NewPipeHelper {
 
     suspend fun getStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
         val streamInfo = StreamInfo.getInfo(ServiceList.YouTube, "https://www.youtube.com/watch?v=$videoId")
-        streamInfo.videoStreams.firstOrNull()?.content ?: streamInfo.audioStreams.firstOrNull()?.content
+        streamInfo.videoStreams.firstOrNull()?.url ?: streamInfo.audioStreams.firstOrNull()?.url
     }
 }
-
