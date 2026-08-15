@@ -24,7 +24,7 @@ interface HistoryDao {
     suspend fun delete(item: HistoryItem)
 }
 
-@Database(entities = [HistoryItem::class], version = 1)
+@Database(entities = [HistoryItem::class], version = 1, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun historyDao(): HistoryDao
 }
