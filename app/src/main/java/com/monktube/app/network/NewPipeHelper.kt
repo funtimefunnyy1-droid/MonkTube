@@ -16,20 +16,27 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
+data class ExtractedMedia(
+    val videoId: String,
+    val title: String,
+    val uploader: String,
+    val thumbnailUrl: String,
+    val streamUrl: String?
+)
+
 object SimpleDownloader : Downloader() {
     override fun execute(request: Request): Response {
-        val httpMethod = request.httpMethod()
         val url = URL(request.url())
         val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = httpMethod
+            requestMethod = request.httpMethod()
             connectTimeout = 30000
             readTimeout = 30000
             instanceFollowRedirects = true
             useCaches = false
-            setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+            setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
-            request.headers().forEach { (key, values) ->
-                setRequestProperty(key, values.joinToString(", "))
+            request.headers().forEach { (k, v) ->
+                setRequestProperty(k, v.joinToString(", "))
             }
 
             request.dataToSend()?.let { data ->
@@ -57,60 +64,51 @@ object NewPipeHelper {
     private var isInitialized = false
 
     @Synchronized
-    fun ensureInitialized() {
+    private fun ensureInit() {
         if (!isInitialized) {
             try {
                 NewPipe.init(SimpleDownloader, Localization.DEFAULT)
                 isInitialized = true
             } catch (e: Throwable) {
-                Log.e("NewPipeHelper", "Init error", e)
+                Log.e("NewPipeHelper", "Init failed", e)
             }
         }
     }
 
-    suspend fun getStreamUrl(queryOrId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun getStreamUrl(queryOrId: String): ExtractedMedia? = withContext(Dispatchers.IO) {
         try {
-            ensureInitialized()
-
+            ensureInit()
             val input = queryOrId.trim()
             if (input.isEmpty()) return@withContext null
 
-            val videoUrl = when {
-                // Full URL or standard watch link
+            var targetUrl = when {
                 input.startsWith("http://") || input.startsWith("https://") -> input
-
-                // 11-char Video ID
                 input.length == 11 && !input.contains(" ") -> "https://www.youtube.com/watch?v=$input"
-
-                // Search query
-                else -> {
-                    val searchHandler = ServiceList.YouTube.searchQHFactory.fromQuery(input)
-                    val searchInfo = SearchInfo.getInfo(ServiceList.YouTube, searchHandler)
-                    val firstVideo = searchInfo.relatedItems
-                        .filterIsInstance<StreamInfoItem>()
-                        .firstOrNull()
-
-                    firstVideo?.url ?: "https://www.youtube.com/watch?v=$input"
-                }
+                else -> null
             }
 
-            val streamInfo = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
+            if (targetUrl == null) {
+                val searchHandler = ServiceList.YouTube.searchQHFactory.fromQuery(input)
+                val searchInfo = SearchInfo.getInfo(ServiceList.YouTube, searchHandler)
+                val topItem = searchInfo.relatedItems.filterIsInstance<StreamInfoItem>().firstOrNull()
+                targetUrl = topItem?.url ?: "https://www.youtube.com/watch?v=$input"
+            }
 
-            // 1. Try progressive video streams
-            val videoStream = streamInfo.videoStreams.firstOrNull { it.url != null }?.url
-            if (!videoStream.isNullOrEmpty()) return@withContext videoStream
+            val streamInfo = StreamInfo.getInfo(ServiceList.YouTube, targetUrl)
 
-            // 2. Try audio-only streams
-            val audioStream = streamInfo.audioStreams.firstOrNull { it.url != null }?.url
-            if (!audioStream.isNullOrEmpty()) return@withContext audioStream
+            val streamUrl = streamInfo.audioStreams.firstOrNull { it.url != null }?.url
+                ?: streamInfo.videoStreams.firstOrNull { it.url != null }?.url
+                ?: streamInfo.videoOnlyStreams.firstOrNull { it.url != null }?.url
 
-            // 3. Try video-only streams
-            val videoOnlyStream = streamInfo.videoOnlyStreams.firstOrNull { it.url != null }?.url
-            if (!videoOnlyStream.isNullOrEmpty()) return@withContext videoOnlyStream
-
-            null
+            ExtractedMedia(
+                videoId = streamInfo.id ?: input,
+                title = streamInfo.name ?: "Unknown Title",
+                uploader = streamInfo.uploaderName ?: "YouTube",
+                thumbnailUrl = streamInfo.thumbnails.firstOrNull()?.url ?: "https://img.youtube.com/vi/${streamInfo.id}/hqdefault.jpg",
+                streamUrl = streamUrl
+            )
         } catch (e: Throwable) {
-            Log.e("NewPipeHelper", "Failed to extract stream", e)
+            Log.e("NewPipeHelper", "Extraction error", e)
             null
         }
     }
