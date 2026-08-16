@@ -4,11 +4,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.monktube.app.data.HistoryItem
@@ -20,6 +24,14 @@ fun MainScreen(
     onVideoSelected: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
+
+    val triggerSearch = {
+        if (searchQuery.isNotBlank()) {
+            focusManager.clearFocus()
+            onSearch(searchQuery.trim())
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -31,11 +43,13 @@ fun MainScreen(
                     .padding(16.dp),
                 placeholder = { Text("Enter Video ID or Search...") },
                 trailingIcon = {
-                    IconButton(onClick = { onSearch(searchQuery) }) {
+                    IconButton(onClick = { triggerSearch() }) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
                 },
-                singleLine = true
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { triggerSearch() })
             )
         }
     ) { padding ->
@@ -80,4 +94,3 @@ fun MainScreen(
         }
     }
 }
-
