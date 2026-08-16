@@ -13,7 +13,9 @@ import com.monktube.app.data.HistoryItem
 import com.monktube.app.network.NewPipeHelper
 import com.monktube.app.player.SleepTimer
 import com.monktube.app.ui.MainScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -26,7 +28,9 @@ class MainActivity : ComponentActivity() {
 
         player = ExoPlayer.Builder(this).build()
         sleepTimer = SleepTimer(player)
-        db = Room.databaseBuilder(applicationContext, AppDatabase::class.java, "monktube-db").build()
+        db = Room.databaseBuilder(applicationContext, AppDatabase::class.java, "monktube-db")
+            .fallbackToDestructiveMigration()
+            .build()
 
         setContent {
             val historyList by db.historyDao().getAllHistory().collectAsState(initial = emptyList())
@@ -44,24 +48,30 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun playVideo(videoId: String) {
-        lifecycleScope.launch {
-            val streamUrl = NewPipeHelper.getStreamUrl(videoId)
-            streamUrl?.let { url ->
-                val mediaItem = MediaItem.fromUri(url)
-                player.setMediaItem(mediaItem)
-                player.prepare()
-                player.play()
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val streamUrl = NewPipeHelper.getStreamUrl(videoId)
 
-                sleepTimer.startTimer(30)
+                if (!streamUrl.isNullOrEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        val mediaItem = MediaItem.fromUri(streamUrl)
+                        player.setMediaItem(mediaItem)
+                        player.prepare()
+                        player.play()
+                        sleepTimer.startTimer(30)
+                    }
 
-                db.historyDao().insert(
-                    HistoryItem(
-                        videoId = videoId,
-                        title = "Video: $videoId",
-                        channel = "YouTube Stream",
-                        thumbnailUrl = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+                    db.historyDao().insert(
+                        HistoryItem(
+                            videoId = videoId,
+                            title = "Video: $videoId",
+                            channel = "YouTube Stream",
+                            thumbnailUrl = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+                        )
                     )
-                )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
