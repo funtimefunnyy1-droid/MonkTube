@@ -1,6 +1,7 @@
 package com.monktube.app
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
@@ -48,30 +49,35 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun playVideo(videoId: String) {
+        Toast.makeText(this, "Loading: $videoId...", Toast.LENGTH_SHORT).show()
+
         lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val streamUrl = NewPipeHelper.getStreamUrl(videoId)
+            val result = NewPipeHelper.getStreamUrl(videoId)
 
-                if (!streamUrl.isNullOrEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        val mediaItem = MediaItem.fromUri(streamUrl)
-                        player.setMediaItem(mediaItem)
-                        player.prepare()
-                        player.play()
-                        sleepTimer.startTimer(30)
-                    }
+            withContext(Dispatchers.Main) {
+                if (result != null && !result.streamUrl.isNullOrEmpty()) {
+                    val mediaItem = MediaItem.fromUri(result.streamUrl)
+                    player.setMediaItem(mediaItem)
+                    player.prepare()
+                    player.play()
+                    sleepTimer.startTimer(30)
 
-                    db.historyDao().insert(
-                        HistoryItem(
-                            videoId = videoId,
-                            title = "Video: $videoId",
-                            channel = "YouTube Stream",
-                            thumbnailUrl = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+                    Toast.makeText(this@MainActivity, "Playing: ${result.title}", Toast.LENGTH_SHORT).show()
+
+                    // Save to history
+                    withContext(Dispatchers.IO) {
+                        db.historyDao().insert(
+                            HistoryItem(
+                                videoId = result.videoId,
+                                title = result.title,
+                                channel = result.uploader,
+                                thumbnailUrl = result.thumbnailUrl
+                            )
                         )
-                    )
+                    }
+                } else {
+                    Toast.makeText(this@MainActivity, "Stream not found or blocked by YouTube.", Toast.LENGTH_LONG).show()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
         }
     }
